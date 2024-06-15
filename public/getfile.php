@@ -1,39 +1,44 @@
 <?php
 
-    require("../includes/config.php");
+require("../includes/config.php");
 
-    $usrdir = $_SESSION['usrdir'];
-    $fileId = $_GET["fileId"];
+$usrdir = $_SESSION['usrdir'] ?? null;
+$fileId = $_GET["fileId"] ?? null;
 
-    // getfile wasn't called properly with a file id
-    if (empty($fileId))
-    {
-        http_response_code(400);
-        exit;
-    }
+// Ensure user directory and file ID are set
+if (empty($usrdir) || empty($fileId)) {
+    http_response_code(400);
+    exit;
+}
 
-    // get name of file
-    $filename = query("SELECT file FROM files WHERE fileid = ?"
-                        , $fileId)[0]['file'];
+// Get name of file
+$stmt = $pdo->prepare("SELECT file FROM files WHERE fileid = ?");
+$stmt->execute([$fileId]);
+$fileData = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // extract content of file
-    $content = file_get_contents($usrdir.$filename);
+// Ensure file exists in database
+if (!$fileData) {
+    http_response_code(404);
+    exit;
+}
 
-    // ensure content extraction did work
-    if ($content === false)
-    {
-        http_response_code(503);
-        exit;
-    }
+$filename = $fileData['file'];
 
-    // build array for ajax response
-    $response = [
-        "content" => $content,
-        "filename" => $filename
-    ];
+// Extract content of file
+$content = file_get_contents($usrdir . $filename);
 
-    // spit out content as json
-    header("Content-type: application/json");
-    echo json_encode($response);
+// Ensure content extraction did work
+if ($content === false) {
+    http_response_code(503);
+    exit;
+}
 
-?>
+// Build array for ajax response
+$response = [
+    "content" => $content,
+    "filename" => $filename
+];
+
+// Output content as JSON
+header("Content-type: application/json");
+echo json_encode($response);

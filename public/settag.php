@@ -1,58 +1,54 @@
 <?php
 
-    require("../includes/config.php");
+require("../includes/config.php");
 
-    $filename = $_POST["filename"];
-    $fileId = $_POST["fileId"];
-    $tagged = false;
-    $tag_num = NULL;
-    $tagId = NULL;
-    $rval = NULL;
+$filename = $_POST["filename"] ?? null;
+$fileId = $_POST["fileId"] ?? null;
+$tagged = false;
+$tag_num = null;
+$tagId = null;
+$rval = null;
 
-    if (empty($_POST["tag"])) {
-        $rval = 1;
-    } else {
-        $tag = htmlspecialchars($_POST["tag"]);
+if (empty($_POST["tag"])) {
+    $rval = 1;
+} else {
+    $tag = htmlspecialchars($_POST["tag"]);
+}
+
+// Prepare and execute the SELECT statement to get tag slots
+$stmt = $pdo->prepare("SELECT tag1, tag2, tag3 FROM files WHERE id = ? AND file = ?");
+$stmt->execute([$_SESSION["id"], $filename]);
+$tags = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if ($tags) {
+    // Try all tag slots
+    for ($i = 1; $i <= 3; $i++) {
+        $tagColumn = "tag$i";
+        if ($tags[$tagColumn] === null) {
+            $tag_num = $tagColumn;
+            $stmtUpdate = $pdo->prepare("UPDATE files SET $tagColumn = ? WHERE id = ? AND file = ?");
+            $tagged = $stmtUpdate->execute([$tag, $_SESSION["id"], $filename]);
+            break;
+        }
     }
 
-    // get tag slots
-    $tags = query("SELECT tag1,tag2,tag3 FROM files WHERE id = ? AND file = ?",
-            $_SESSION["id"], $filename);
-    // try all tag slots
-    // TODO - consolidate?! (loop)
-    if ($tags[0]['tag1'] === NULL) {
-        $tag_num = 'tag1';
-        $tagged = query("UPDATE files SET tag1 = ? WHERE id = ? AND file = ?",
-                    $_POST["tag"], $_SESSION["id"], $filename);
-    }
-    else if ($tags[0]['tag2'] === NULL) {
-        $tag_num = 'tag2';
-        $tagged = query("UPDATE files SET tag2 = ? WHERE id = ? AND file = ?",
-                    $_POST["tag"], $_SESSION["id"], $filename);
-    }
-    else if ($tags[0]['tag3'] === NULL) {
-        $tag_num = 'tag3';
-        $tagged = query("UPDATE files SET tag3 = ? WHERE id = ? AND file = ?",
-                    $_POST["tag"], $_SESSION["id"], $filename);
-    } else {
-        $rval = 3;
-    }
-
-    if ($rval !== 3 && $tagged !== false) {
+    if ($tag_num !== null && $tagged) {
         $rval = 0;
         $tagId = $tag_num . '_' . $fileId;
+    } elseif ($tag_num === null) {
+        $rval = 3; // No available tag slots
+    } else {
+        $rval = 2; // Update failed
     }
-    else if ($rval !== 3 && $tagged === false) {
-        $rval = 2;
-    }
+} else {
+    $rval = 4; // File not found
+}
 
-    // json response
-    $response = [
-        "rval" => $rval,
-        "tagId" => $tagId
-    ];
+// JSON response
+$response = [
+    "rval" => $rval,
+    "tagId" => $tagId
+];
 
-    header("Content-type: application/json");
-    echo json_encode($response);
-
-?>
+header("Content-type: application/json");
+echo json_encode($response);

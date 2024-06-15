@@ -1,65 +1,68 @@
 <?php
 
-    /**
-     * Edinote controller for main page
-     *
-     * Ben Haeringer
-     * ben.haeringer@gmail.com
-     *
-     */
+/**
+ * Edinote controller for main page
+ */
 
-    require("../includes/config.php");
+require '../includes/config.php';
 
-    // store user data directory in global SESSION variable
-    $_SESSION["usrdir"] = DATADIR . query("SELECT username FROM users WHERE id = ?"
-                                , $_SESSION["id"])[0]['username'] . "/";
+try {
+    // Use PDO for database interaction
+    $pdo = new PDO($dsn, $user, $pass, $options);
 
-    // check if user has demo flag checked
-    $_SESSION["demo"] = query("SELECT demo FROM users WHERE id = ?"
-                                , $_SESSION["id"])[0]['demo'];
+    // Fetch user data
+    $userId = $_SESSION["id"];
 
-    // check if user has Edinote admin rights
-    $_SESSION["admin"] = query("SELECT admin FROM users WHERE id = ?"
-                    , $_SESSION["id"])[0]['admin'];
+    $stmt = $pdo->prepare("SELECT username, demo, admin FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+
+    if (!$user) {
+        throw new Exception('User not found');
+    }
+
+    // Store user data in session
+    $_SESSION["usrdir"] = DATADIR . $user['username'] . "/";
+    $_SESSION["demo"] = $user['demo'];
+    $_SESSION["admin"] = $user['admin'];
     $admin = $_SESSION["admin"];
 
-    $users = NULL;
+    $users = null;
     if ($admin === "true") {
-        $users = query("SELECT username FROM users");
+        $stmt = $pdo->query("SELECT username FROM users");
+        $users = $stmt->fetchAll();
     }
 
-    // get file arrays from database
-    $files = query("SELECT fileid, file, tag1, tag2, tag3 FROM files
-                    WHERE id = ? ORDER BY LOWER(file)", $_SESSION["id"]);
+    // Get file arrays from database
+    $stmt = $pdo->prepare("SELECT fileid, file, tag1, tag2, tag3 FROM files WHERE id = ? ORDER BY LOWER(file)");
+    $stmt->execute([$userId]);
+    $files = $stmt->fetchAll();
 
-    // array of filenames contained in db
-    $files_db = [];
-    for ($i = 0; $i < sizeof($files); $i++) {
-        $files_db[$i] = $files[$i]["file"];
-    }
+    // Array of filenames contained in db
+    $files_db = array_column($files, 'file');
 
-    // get actual files in user directory
-    $files_dir = array_diff(scandir($_SESSION["usrdir"]), array('..', '.'));
+    // Get actual files in user directory
+    $files_dir = array_diff(scandir($_SESSION["usrdir"]), ['..', '.']);
 
-    // compare actual files to files in db
+    // Compare actual files to files in db
     $diff = array_diff($files_dir, $files_db);
     if (!empty($diff)) {
-
-        // if there are new files, write database entry for each new file item
+        $stmt = $pdo->prepare("INSERT INTO files (fileid, id, file, tag1, tag2, tag3) VALUES (?, ?, ?, NULL, NULL, NULL)");
         foreach ($diff as $item) {
-            $fileId = uniqid('fid_');
-            if (query("INSERT INTO files (fileid, id, file, tag1
-                        , tag2, tag3) VALUES (?, ?, ?, NULL, NULL, NULL)"
-                        , $fileId, $_SESSION["id"], $item) === false)
-            {
+            $fileId = uniqid('fid_', true);
+            if (!$stmt->execute([$fileId, $userId, $item])) {
                 error_log('Could not add files to database');
             }
         }
-        // update files array for later use
-        $files = query("SELECT fileid, file, tag1, tag2, tag3 FROM files
-                    WHERE id = ? ORDER BY LOWER(file)", $_SESSION["id"]);
+
+        // Update files array for later use
+        $stmt->execute([$userId]);
+        $files = $stmt->fetchAll();
     }
 
     render("main.php", ["files" => $files, "admin" => $admin, "users" => $users]);
-
-?>
+} catch (Exception $e) {
+    error_log($e->getMessage());
+    // Handle error gracefully, perhaps redirect to an error page or show a user-friendly message
+    die('An error occurred. Please try again later.');
+}

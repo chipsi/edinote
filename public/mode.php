@@ -1,59 +1,54 @@
 <?php
 
-    require("../includes/config.php");
+require("../includes/config.php");
 
-    $rval = NULL;
-    $init = $_POST["init"];
+$rval = null;
+$init = $_POST["init"] ?? null;
+$userId = $_SESSION["id"] ?? null;
 
-    $viewmode = query("SELECT viewmode FROM users WHERE id = ?"
-                        , $_SESSION["id"])[0]['viewmode'];
+// Validate user session
+if ($userId === null) {
+    http_response_code(400);
+    exit;
+}
 
-    if ($viewmode === false)
-    {
-        http_response_code(503);
-        exit;
-    }
+// Get current view mode
+$stmt = $pdo->prepare("SELECT viewmode FROM users WHERE id = ?");
+$stmt->execute([$userId]);
+$viewmodeData = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // switch mode if mode.php was called from switch button
-    if ($init === 'false') {
-        if ($viewmode === 'false') {
+if ($viewmodeData === false) {
+    http_response_code(503);
+    exit;
+}
 
-            if (query("UPDATE users SET viewmode = 'true'
-                WHERE id = ?", $_SESSION["id"]) !== false) {
-                $viewmode = 'true';
-            }
-            else {
-                $rval = 1;
-            }
-        }
-        else {
-            if (query("UPDATE users SET viewmode = 'false'
-                WHERE id = ?", $_SESSION["id"]) !== false) {
-                $viewmode = 'false';
-            }
-            else {
-                $rval = 1;
-            }
-        }
+$viewmode = $viewmodeData['viewmode'];
+
+// Switch mode if mode.php was called from switch button
+if ($init === 'false') {
+    $newViewmode = ($viewmode === 'false') ? 'true' : 'false';
+    $stmt = $pdo->prepare("UPDATE users SET viewmode = ? WHERE id = ?");
+    if ($stmt->execute([$newViewmode, $userId])) {
+        $viewmode = $newViewmode;
     } else {
-        if ($_SESSION['demo'] === 'true') {
-            if (query("UPDATE users SET viewmode = 'false'
-                WHERE id = ?", $_SESSION["id"]) !== false) {
-                $viewmode = 'false';
-            }
-            else {
-                $rval = 1;
-            }
+        $rval = 1;
+    }
+} else {
+    if ($_SESSION['demo'] === 'true') {
+        $stmt = $pdo->prepare("UPDATE users SET viewmode = 'false' WHERE id = ?");
+        if ($stmt->execute(['false', $userId])) {
+            $viewmode = 'false';
+        } else {
+            $rval = 1;
         }
     }
+}
 
-    // json response
-    $response = [
-        "rval" => $rval,
-        "viewmode_r" => $viewmode
-    ];
+// JSON response
+$response = [
+    "rval" => $rval,
+    "viewmode_r" => $viewmode
+];
 
-    header("Content-type: application/json");
-    echo json_encode($response);
-
-?>
+header("Content-type: application/json");
+echo json_encode($response);
